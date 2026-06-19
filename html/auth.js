@@ -177,15 +177,21 @@ var Auth = {
   },
   // ── Forgot Password ───────────────────────────────────────────────────────
 
+  /**
+   * Decides which reset path to use for a given identifier.
+   * Returns one of:
+   *   { ok: true, mode: 'email' }        — reset email was sent
+   *   { ok: true, mode: 'otp', phone }   — SMS OTP was sent, caller should show OTP step
+   *   { ok: false, error }
+   */
   async forgotPassword(identifier) {
     try {
       var clean = (identifier || '').trim();
       if (!clean) return { ok: false, error: 'Please enter your email address or cell number.' };
 
-      var email = _buildEmail(clean);
-
-      // If identifier is a phone number, try to use their stored recovery email instead
       if (_isPhone(clean)) {
+        // If they have a recovery email on file, prefer the normal email-link flow.
+        var recoveryEmail = null;
         try {
           var { data: profileData } = await _sb()
             .from('profiles')
@@ -193,17 +199,76 @@ var Auth = {
             .eq('phone', clean)
             .single();
           if (profileData && profileData.recovery_email) {
-            email = profileData.recovery_email;
+            recoveryEmail = profileData.recovery_email;
           }
-        } catch (e) { /* fall back to synthetic email */ }
+        } catch (e) { /* no profile / no recovery email — fall back to OTP */ }
+
+        if (recoveryEmail) {
+          var { error: linkError } = await _sb().auth.resetPasswordForEmail(recoveryEmail, {
+            redirectTo: window.location.origin + '/reset-password.html',
+          });
+          if (linkError) return { ok: false, error: linkError.message };
+          return { ok: true, mode: 'email' };
+        }
+
+        // No recovery email on file — use SMS OTP instead.
+        var otpResult = await this.sendOtp(clean);
+        if (!otpResult.ok) return { ok: false, error: otpResult.error || 'Could not send code. Please try again.' };
+        return { ok: true, mode: 'otp', phone: clean };
       }
 
-      var { error } = await _sb().auth.resetPasswordForEmail(email, {
+      // Identifier is an email address — normal Supabase reset-link flow.
+      var { error } = await _sb().auth.resetPasswordForEmail(clean, {
         redirectTo: window.location.origin + '/reset-password.html',
       });
-
       if (error) return { ok: false, error: error.message };
-      return { ok: true };
+      return { ok: true, mode: 'email' };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  },
+
+  /**
+   * Sends a 6-digit SMS OTP for password reset via the "send-otp" Edge Function.
+   */
+  async sendOtp(phone) {
+    try {
+      var resp = await fetch(SUPABASE_URL + '/functions/v1/send-otp', {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization':  'Bearer ' + SUPABASE_KEY,
+        },
+        body: JSON.stringify({ phone: phone }),
+      });
+      var json = await resp.json();
+      if (!resp.ok) return { ok: false, error: json.error || 'Could not send code.' };
+      return json;
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  },
+
+  /**
+   * Verifies the SMS OTP and sets the new password via the
+   * "verify-otp-and-reset" Edge Function.
+   */
+  async verifyOtpAndReset(phone, otp, newPassword) {
+    try {
+      if (!newPassword || newPassword.length < 6) {
+        return { ok: false, error: 'Password must be at least 6 characters.' };
+      }
+      var resp = await fetch(SUPABASE_URL + '/functions/v1/verify-otp-and-reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization':  'Bearer ' + SUPABASE_KEY,
+        },
+        body: JSON.stringify({ phone: phone, otp: otp, newPassword: newPassword }),
+      });
+      var json = await resp.json();
+      if (!resp.ok) return { ok: false, error: json.error || 'Invalid or expired code.' };
+      return json;
     } catch (e) {
       return { ok: false, error: e.message };
     }
