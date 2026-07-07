@@ -569,6 +569,31 @@
         <svg id="gallery-chevron-up" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><path d="m18 15-6-6-6 6"/></svg>
       </button>
     </div>
+
+    <!-- ===== FULL EVENT PHOTO ARCHIVE (Day 1 & Day 2, 2026) ===== -->
+    <div style="margin-top:3.5rem; padding-top:2.5rem; border-top:1px solid rgba(0,0,0,0.08);">
+      <div class="text-center" style="margin-bottom:1.5rem;">
+        <span class="section-eyebrow" style="color:#29B6F6;">451 Photos</span>
+        <h3 style="font-family:'Space Grotesk',sans-serif; font-size:1.5rem; font-weight:700; margin:.4rem 0 .5rem;">Full Event Photo Archive</h3>
+        <p class="text-muted" style="max-width:34rem; margin:0 auto;">Browse the complete photo set from both days of Phunya Tsela 2026.</p>
+      </div>
+
+      <div style="display:flex; justify-content:center; gap:.6rem; margin-bottom:1.75rem; flex-wrap:wrap;">
+        <button class="archive-filter-btn btn-outline active" data-day="all" type="button">All Photos</button>
+        <button class="archive-filter-btn btn-outline" data-day="day1" type="button">Day 1</button>
+        <button class="archive-filter-btn btn-outline" data-day="day2" type="button">Day 2</button>
+      </div>
+
+      <div class="gallery-grid" id="expo-archive-grid"></div>
+
+      <div class="text-center mt-8">
+        <button class="btn-outline btn-lg" id="expo-archive-load-more" type="button">
+          Load More Photos
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <p class="text-sm text-muted mt-2" id="expo-archive-count"></p>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -871,6 +896,18 @@
   font-weight: 700 !important;
   color: #1d4ed8 !important;
 }
+
+/* Full Event Photo Archive */
+.archive-filter-btn {
+  padding: 0.5rem 1.1rem;
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+.archive-filter-btn.active {
+  background: hsl(var(--primary, 220 90% 50%));
+  color: #fff;
+  border-color: hsl(var(--primary, 220 90% 50%));
+}
 </style>
 
 <script>
@@ -1024,8 +1061,84 @@ function showProspErr(msg) {
 }
 </script>
 
+<script>
+/* ===== FULL EVENT PHOTO ARCHIVE (Day 1 & Day 2) =====
+   451 compressed WebP photos, loaded in batches of 16 so the
+   page never has to render (or download) all of them at once. */
+(function () {
+  var DAY1_COUNT = 167;
+  var DAY2_COUNT = 284;
+  var BATCH_SIZE = 16;
+
+  function pad(n) { return String(n).padStart(3, '0'); }
+
+  var day1Files = [];
+  for (var i = 1; i <= DAY1_COUNT; i++) {
+    day1Files.push({ src: 'src/assets/gallery/day1/day1-' + pad(i) + '.webp', day: 'day1' });
+  }
+  var day2Files = [];
+  for (var j = 1; j <= DAY2_COUNT; j++) {
+    day2Files.push({ src: 'src/assets/gallery/day2/day2-' + pad(j) + '.webp', day: 'day2' });
+  }
+  var allFiles = day1Files.concat(day2Files);
+
+  var grid = document.getElementById('expo-archive-grid');
+  var loadMoreBtn = document.getElementById('expo-archive-load-more');
+  var countLabel = document.getElementById('expo-archive-count');
+  var filterBtns = document.querySelectorAll('.archive-filter-btn');
+
+  if (!grid || !loadMoreBtn) return;
+
+  var currentFilter = 'all';
+  var loaded = 0;
+
+  function getFiltered() {
+    if (currentFilter === 'all') return allFiles;
+    return allFiles.filter(function (f) { return f.day === currentFilter; });
+  }
+
+  function renderBatch() {
+    var filtered = getFiltered();
+    var next = filtered.slice(loaded, loaded + BATCH_SIZE);
+    next.forEach(function (item, idx) {
+      var div = document.createElement('div');
+      div.className = 'gallery-item';
+      var img = document.createElement('img');
+      img.src = item.src;
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      img.alt = 'Phunya Tsela Career Expo 2026 — ' + (item.day === 'day1' ? 'Day 1' : 'Day 2') + ' photo ' + (loaded + idx + 1);
+      div.appendChild(img);
+      grid.appendChild(div);
+    });
+    loaded += next.length;
+
+    var remaining = filtered.length - loaded;
+    countLabel.textContent = 'Showing ' + loaded + ' of ' + filtered.length + ' photos';
+    loadMoreBtn.style.display = remaining > 0 ? 'inline-flex' : 'none';
+  }
+
+  function resetAndRender() {
+    grid.innerHTML = '';
+    loaded = 0;
+    renderBatch();
+  }
+
+  loadMoreBtn.addEventListener('click', renderBatch);
+
+  filterBtns.forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      filterBtns.forEach(function (b) { b.classList.remove('active'); });
+      btn.classList.add('active');
+      currentFilter = btn.getAttribute('data-day');
+      resetAndRender();
+    });
+  });
+
+  document.addEventListener('DOMContentLoaded', renderBatch);
+})();
+</script>
+
 <script src="script.js"></script>
 </body>
 </html>
-
-
